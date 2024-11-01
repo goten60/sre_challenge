@@ -16,7 +16,33 @@ resource "aws_vpc_security_group_egress_rule" "rds_eggress" {
   ip_protocol       = "-1" # semantically equivalent to all ports
 }
 
+#role
+resource "aws_iam_role" "rds_enhanced_monitoring" {
+  name_prefix        = "rds-enhanced-monitoring-"
+  assume_role_policy = data.aws_iam_policy_document.rds_enhanced_monitoring.json
+}
 
+resource "aws_iam_role_policy_attachment" "rds_enhanced_monitoring" {
+  role       = aws_iam_role.rds_enhanced_monitoring.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
+}
+
+data "aws_iam_policy_document" "rds_enhanced_monitoring" {
+  statement {
+    actions = [
+      "sts:AssumeRole",
+    ]
+
+    effect = "Allow"
+
+    principals {
+      type        = "Service"
+      identifiers = ["monitoring.rds.amazonaws.com"]
+    }
+  }
+}
+
+#########
 
 # Crear la instancia RDS
 resource "aws_db_instance" "db_instance" {
@@ -33,15 +59,18 @@ resource "aws_db_instance" "db_instance" {
   username               = var.db_user
   enabled_cloudwatch_logs_exports  = ["error", "general"]
 
-  #monitoring_interval    = 60
+  monitoring_interval    = 60
+  monitoring_role_arn    = aws_iam_role.rds_enhanced_monitoring.arn
 
 
   db_name          = var.db_name
   backup_retention_period = 7  # Retención de backups automáticos por 7 días
-  skip_final_snapshot     = true  # No saltar el snapshot final
-  #final_snapshot_identifier = "snapshot-final-mi-db-instance"
-  #performance_insights_enabled = true # no lo soporta
-  #password = "master_2024"
+
+  skip_final_snapshot     = true  # debe ser falso para ambiente productivos
+  final_snapshot_identifier = "snapshot-final-mi-db-instance"
+  deletion_protection     = false  # debe ser true para ambiente productivos
+
+
   #Se recomienda pero no es compatible con replicas lectura
   manage_master_user_password   = true
   master_user_secret_kms_key_id = aws_kms_key.kms_rds.key_id
