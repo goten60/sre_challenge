@@ -1,6 +1,5 @@
 
-
-
+#Bucket para cloudfront
 resource "aws_s3_bucket" "mi_bucket" {
   bucket_prefix = var.s3_bucket_name
 
@@ -24,42 +23,15 @@ resource "aws_s3_bucket" "mi_bucket" {
   }
 }
 
-/*
-resource "aws_s3_bucket_acl" "acl_mi_bucket" {
-  bucket = aws_s3_bucket.mi_bucket.id
-  acl    = "private"
-}
-*/
-
-resource "aws_s3_bucket_versioning" "versioning_example" {
+#Bucket versionado
+resource "aws_s3_bucket_versioning" "versioning" {
   bucket = aws_s3_bucket.mi_bucket.id
   versioning_configuration {
     status = "Enabled"
   }
 }
 
-resource "aws_s3_bucket_policy" "bucket_policy" {
-  bucket = aws_s3_bucket.mi_bucket.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Principal = "*"
-        Action   = "s3:GetObject"
-        Resource = "${aws_s3_bucket.mi_bucket.arn}/*"
-        Condition = {
-          StringEquals = {
-            "aws:SourceArn" = aws_cloudfront_distribution.cdn.arn
-          }
-        }
-      }
-    ]
-  })
-}
-
-# Create CloudFront origin access control
+# CloudFront origin access control
 resource "aws_cloudfront_origin_access_control" "cdn_origin_access_control" {
   name                            = "OAC-${aws_s3_bucket.mi_bucket.id}"
   origin_access_control_origin_type = "s3"
@@ -67,17 +39,13 @@ resource "aws_cloudfront_origin_access_control" "cdn_origin_access_control" {
   signing_protocol                = "sigv4"
 }
 
+#cloudfront
 resource "aws_cloudfront_distribution" "cdn" {
   origin {
     domain_name = aws_s3_bucket.mi_bucket.bucket_regional_domain_name
-    #origin_id   = "S3Origin"
     origin_access_control_id = aws_cloudfront_origin_access_control.cdn_origin_access_control.id
     origin_id                = "${aws_s3_bucket.mi_bucket.id}.s3.${var.aws_region}.amazonaws.com"
 
-    # Configuración de acceso a S3
-    /*s3_origin_config {
-      origin_access_identity = aws_cloudfront_origin_access_identity.oai.cloudfront_access_identity_path
-    }*/
   }
   restrictions {
     geo_restriction {
@@ -113,6 +81,7 @@ resource "aws_cloudfront_distribution" "cdn" {
   tags = local.common_tags
 }
 
+#Bucket policy para permitir cloudfront
 resource "aws_s3_bucket_policy" "mi_bucket_policy" {
   bucket = aws_s3_bucket.mi_bucket.id
 
@@ -140,10 +109,7 @@ resource "aws_s3_bucket_policy" "mi_bucket_policy" {
 EOF
 }
 
-/* resource "aws_cloudfront_origin_access_identity" "oai" {
-  comment = "Access to S3 bucket for CloudFront"
-} */
-
+#Bucket encryption
 resource "aws_s3_bucket_server_side_encryption_configuration" "mi_bucket_encryption" {
   bucket = aws_s3_bucket.mi_bucket.id
 
@@ -154,25 +120,19 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "mi_bucket_encrypt
   }
 }
 
-# Logs de acceso y creación de una alarma de almacenamiento
+#Bucket logging
 resource "aws_s3_bucket_logging" "log" {
   bucket        = aws_s3_bucket.mi_bucket.id
   target_bucket = aws_s3_bucket.log_bucket.id
   target_prefix = "logs/"
 }
 
+# bucket para logs
 resource "aws_s3_bucket" "log_bucket" {
   bucket_prefix =  var.s3_log_bucket_name
 }
 
-
-/*
-resource "aws_s3_bucket_acl" "acl_log_bucket" {
-  bucket = aws_s3_bucket.log_bucket.id
-  acl    = "private"
-}
-*/
-
+#alarma para el bucket
 resource "aws_cloudwatch_metric_alarm" "storage_alarm" {
   alarm_name                = "S3 HighS3BucketStorage"
   comparison_operator       = "GreaterThanThreshold"

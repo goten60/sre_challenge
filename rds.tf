@@ -1,32 +1,36 @@
 
-
+#KMS
 resource "aws_kms_key" "kms_rds" {
   description = "KMS Key for RDS"
 }
 
+#Security Group RDS
 resource "aws_security_group" "rds_sg" {
   vpc_id = module.vpc.vpc_id
   name = "rds_sg"
   tags = local.common_tags
 }
 
+#Regla de acceso para que el RDS tenga salida a internet
 resource "aws_vpc_security_group_egress_rule" "rds_eggress" {
   security_group_id = aws_security_group.rds_sg.id
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1" # semantically equivalent to all ports
 }
 
-#role
+#role RDS monitoring
 resource "aws_iam_role" "rds_enhanced_monitoring" {
   name_prefix        = "rds-enhanced-monitoring-"
   assume_role_policy = data.aws_iam_policy_document.rds_enhanced_monitoring.json
 }
 
+#Politicas para el rol
 resource "aws_iam_role_policy_attachment" "rds_enhanced_monitoring" {
   role       = aws_iam_role.rds_enhanced_monitoring.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
 }
 
+#data para el rol
 data "aws_iam_policy_document" "rds_enhanced_monitoring" {
   statement {
     actions = [
@@ -42,14 +46,13 @@ data "aws_iam_policy_document" "rds_enhanced_monitoring" {
   }
 }
 
-#########
 
 # Crear la instancia RDS
 resource "aws_db_instance" "db_instance" {
   identifier              = var.db_identifier
   engine                 = "mysql"
   engine_version         = "8.0.39"  # Cambia a la versión que necesites
-  instance_class         = "db.t4g.small"  # Cambios aquí para utilizar T4.small
+  instance_class         = "db.t4g.small"
   allocated_storage       = 20
   max_allocated_storage   = 50
   storage_type           = "gp3"
@@ -77,18 +80,10 @@ resource "aws_db_instance" "db_instance" {
 
   tags = local.common_tags
 
-  # Habilitar el almacenamiento en el momento de la instancia
-  storage_encrypted = true  # Opcional: Habilita para almacenamiento encriptado
+
+  storage_encrypted = true
 }
 
-/*
-resource "aws_db_instance" "replica-rds" {
-  instance_class       = "db.t4g.small"
-  skip_final_snapshot  = true
-  backup_retention_period = 7
-  replicate_source_db = aws_db_instance.db_instance.identifier
-}
- */
 
 # Crear un grupo de subred para RDS
 resource "aws_db_subnet_group" "my_db_subnet_group" {
@@ -100,9 +95,9 @@ resource "aws_db_subnet_group" "my_db_subnet_group" {
   }
 }
 
-# Alarmas de CloudWatch
+# Alarmas RDS
 resource "aws_cloudwatch_metric_alarm" "cpu_utilization_alarm" {
-  alarm_name          = "High CPU Utilization"
+  alarm_name          = "RDS High CPU Utilization"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "1"
   metric_name        = "CPUUtilization"
@@ -119,8 +114,9 @@ resource "aws_cloudwatch_metric_alarm" "cpu_utilization_alarm" {
   alarm_actions = [aws_sns_topic.my_sns_topic.arn]
 }
 
+# Alarmas RDS
 resource "aws_cloudwatch_metric_alarm" "database_connections_alarm" {
-  alarm_name          = "High Database Connections"
+  alarm_name          = "RDS High Database Connections"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = "1"
   metric_name        = "DatabaseConnections"
@@ -137,8 +133,9 @@ resource "aws_cloudwatch_metric_alarm" "database_connections_alarm" {
   alarm_actions = [aws_sns_topic.my_sns_topic.arn]
 }
 
+# Alarmas RDS
 resource "aws_cloudwatch_metric_alarm" "free_storage_space_alarm" {
-  alarm_name          = "Low Free Storage Space"
+  alarm_name          = "RDS Low Free Storage Space"
   comparison_operator = "LessThanThreshold"
   evaluation_periods  = "1"
   metric_name        = "FreeStorageSpace"

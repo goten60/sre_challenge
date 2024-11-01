@@ -1,26 +1,48 @@
-# Security Group for Public Load Balancer
+# Security Group par ALB
 module "loadbalancer_sg" {
   source  = "terraform-aws-modules/security-group/aws"
-  #version = "3.18.0"
   version = "5.1.0"
-
   name = "loadbalancer-sg"
   description = "Security Group with HTTP open for entire Internet (IPv4 CIDR), egress ports are all world open"
   vpc_id = module.vpc.vpc_id
-  # Ingress Rules & CIDR Blocks
+  # Reglas entrada
   ingress_rules = ["http-80-tcp","https-443-tcp"]
   ingress_cidr_blocks = ["0.0.0.0/0"]
-  # Egress Rule - all-all open
+  # Reglas salida
   egress_rules = ["all-all"]
   tags = local.common_tags
-
-
 }
 
-# Terraform AWS Application Load Balancer (ALB)
+#Bucket para logs ALB
+resource "aws_s3_bucket" "logs_alb" {
+  bucket_prefix = "logs-alb"
+  tags = local.common_tags
+}
+
+#Bucket policy
+resource "aws_s3_bucket_policy" "logs_prod_policy" {
+  bucket = aws_s3_bucket.logs_alb.id
+
+  policy = <<POLICY
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::127311923021:root"
+      },
+      "Action": "s3:PutObject",
+      "Resource": "${aws_s3_bucket.logs_alb.arn}/*"
+    }
+  ]
+}
+POLICY
+}
+
+# ALB para el EC2
 module "alb" {
   source  = "terraform-aws-modules/alb/aws"
-  #version = "5.16.0"
   version = "9.4.0"
 
   name = "challenge-alb"
@@ -28,31 +50,24 @@ module "alb" {
   load_balancer_type = "application"
   vpc_id = module.vpc.vpc_id
   subnets = module.vpc.public_subnets
-  #security_groups = [module.loadbalancer_sg.this_security_group_id]
   security_groups = [module.loadbalancer_sg.security_group_id]
   idle_timeout        = 60
   drop_invalid_header_fields = true
   enable_cross_zone_load_balancing = false
 
-
-  # For example only
+  # En produccion deberia esta en true
   enable_deletion_protection = false
 
-  /* access_logs = {
-    bucket = s3_bucket_name
+  access_logs = {
+    bucket = aws_s3_bucket.logs_alb.bucket
     prefix = "alb-access-logs"
-  } */
+  }
+  connection_logs = {
+    bucket = aws_s3_bucket.logs_alb.bucket
+    prefix = "alb-connection_logs"
+  }
 # Listeners
   listeners = {
-/*
-    my-http-listener = {
-      port     = 80
-      protocol = "HTTP"
-      forward = {
-        target_group_key = "mytg1"
-      }
-    }
- */
     ex-http-https-redirect = {
       port     = 80
       protocol = "HTTP"
@@ -76,17 +91,14 @@ module "alb" {
 
 # Target Groups
   target_groups = {
-   # Target Group-1: mytg1
+
    mytg1 = {
-      # VERY IMPORTANT: We will create aws_lb_target_group_attachment resource separately when we use create_attachment = false, refer above GitHub issue URL.
-      ## Github ISSUE: https://github.com/terraform-aws-modules/terraform-aws-alb/issues/316
-      ## Search for "create_attachment" to jump to that Github issue solution
+
       create_attachment = false
       name_prefix                       = "mytg1-"
       protocol                          = "HTTP"
       port                              = 80
       target_type                       = "instance"
-      #target_id = aws_instance.web.id
       deregistration_delay              = 10
       load_balancing_cross_zone_enabled = false
       protocol_version = "HTTP1"
@@ -100,11 +112,11 @@ module "alb" {
         timeout             = 6
         protocol            = "HTTP"
         matcher             = "200-399"
-      }# End of health_check Block
-      tags = local.common_tags # Target Group Tags
-    } # END of Target Group: mytg1
-  } # END OF target_groups Block
-  tags = local.common_tags # ALB Tags
+      }
+      tags = local.common_tags
+    }
+  }
+  tags = local.common_tags
 }
 
 # Load Balancer Target Group Attachment
@@ -124,16 +136,13 @@ resource "aws_vpc_security_group_ingress_rule" "allow_alb" {
 }
 
 
-
-
 output "alb_dns_name" {
   description = "The DNS name of the load balancer"
   value       = module.alb.dns_name
 }
 
 
-
-#route53
+#Zona para el dominio a usar para la aplicacion, necesario para generar el certificado
 resource "aws_route53_zone" "primary" {
   name = var.dominio
   tags = local.common_tags
@@ -151,9 +160,9 @@ resource "aws_acm_certificate" "my_certificate" {
   tags = local.common_tags
 }
 
-# Recurso para validar el certificado (asegúrate de hacerlo)
+# Recurso para validar el certificado
 resource "aws_route53_record" "cert_validation_record" {
-  zone_id = aws_route53_zone.primary.zone_id # Cambia por tu zona de DNS
+  zone_id = aws_route53_zone.primary.zone_id
   for_each = {
     for dvo in aws_acm_certificate.my_certificate.domain_validation_options : dvo.domain_name => {
       name   = dvo.resource_record_name
@@ -177,8 +186,9 @@ resource "aws_acm_certificate_validation" "cert_validation" {
   validation_record_fqdns = [for record in aws_route53_record.cert_validation_record : record.fqdn]
 }
 
+#Registro que apunta el dominio al ALB
 resource "aws_route53_record" "alias_alb" {
-  zone_id = aws_route53_zone.primary.zone_id # Replace with your zone ID
+  zone_id = aws_route53_zone.primary.zone_id
   name    = var.dominio
   type    = "A"
 

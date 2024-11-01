@@ -45,7 +45,7 @@ resource "aws_vpc_security_group_egress_rule" "allow_all_traffic_ipv4" {
 #EC2 para el sistema wordpress
 resource "aws_instance" "web" {
   ami = data.aws_ami.amzLinux.id
-  instance_type = "t2.micro"
+  instance_type = var.ec2_type
   metadata_options {
     http_tokens = "required"
   }
@@ -114,7 +114,11 @@ resource "aws_instance" "web" {
                     [
                         "InstanceId"
                     ]
-                  ]
+                  ],
+                  "append_dimensions": {
+                      "InstanceId": "$${aws:InstanceId}",
+                      "InstanceType": "$${aws:InstanceType}"
+                  }
                 },
                 "logs": {
                   "logs_collected": {
@@ -235,7 +239,12 @@ resource "aws_cloudwatch_metric_alarm" "high_disk_usage" {
   alarm_description   = "Esta alarma se activa cuando el uso de disco supera el 90%."
   dimensions = {
     InstanceId = aws_instance.web.id
-    Partition  = "/"
+    #Partition  = "/"
+    path       = "/"
+    InstanceType = var.ec2_type
+    device ="xvda1"
+    fstype = "xfs"
+
   }
 
   alarm_actions = [aws_sns_topic.my_sns_topic.arn]

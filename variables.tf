@@ -116,7 +116,7 @@ variable "db_user" {
 variable "dominio" {
   description = "Dominio"
   type = string
-  default = "jmarquez.cl"
+  default = "jmarquez.cl" #reemplazar por su dominio
 
 }
 
@@ -125,4 +125,10 @@ variable "sns_email" {
   type = string
   default = "goten60@gmail.com" #reemplazar por tu correo
 
+}
+
+variable "ec2_type" {
+  description = "Tipo de EC2"
+  type = string
+  default = "t2.micro"
 }
